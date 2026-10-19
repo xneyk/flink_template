@@ -1,0 +1,7 @@
+# ignore data director (it is too large)
+data/
+#ignore build artifacts
+target/
+# ignore metals and vscode stuff
+.metals
+.vscode
