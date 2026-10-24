@@ -1,10 +1,11 @@
-import java.text.SimpleDateFormat
-
 import org.apache.flink.streaming.api.TimeCharacteristic
 import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
 import org.apache.flink.api.scala._
-import org.apache.flink.configuration.Configuration
-import util.Protocol.{Commit, CommitGeo, CommitSummary}
+import org.apache.flink.cep.PatternSelectFunction
+import org.apache.flink.cep.scala.CEP
+import org.apache.flink.cep.scala.pattern.Pattern
+import org.apache.flink.streaming.api.windowing.time.Time
+import util.Protocol.{Commit, CommitGeo, CommitSummary, File, Stats}
 import util.{CommitGeoParser, CommitParser}
 
 
@@ -37,7 +38,7 @@ object FlinkAssignment {
         .map(new CommitGeoParser)
 
     /** Use the space below to print and test your questions. */
-    dummy_question(commitStream).print()
+    question_nine(commitStream).print()
 
     /** Start the streaming environment. **/
     env.execute()
@@ -52,7 +53,9 @@ object FlinkAssignment {
     * Write a Flink application which outputs the sha of commits with at least 20 additions.
     * Output format: sha
     */
-  def question_one(input: DataStream[Commit]): DataStream[String] = ???
+  def question_one(input: DataStream[Commit]): DataStream[String] = {
+    input.filter(c => c.stats.getOrElse(Stats(0,0,0)).additions >= 20).map(_.sha)
+  }
 
   /**
     * Write a Flink application which outputs the names of the files with more than 30 deletions.
@@ -64,7 +67,10 @@ object FlinkAssignment {
     * Count the occurrences of Java and Scala files. I.e. files ending with either .scala or .java.
     * Output format: (fileExtension, #occurrences)
     */
-  def question_three(input: DataStream[Commit]): DataStream[(String, Int)] = ???
+  def question_three(input: DataStream[Commit]): DataStream[(String, Int)] = {
+    input.flatMap(i => i.files).map(new ThreeOne).filter(i => i.isDefined).map(new ThreeTwo).filter(i => i._1.equals(".scala") ||i._1.equals(".java")).keyBy(i => i._1).reduce((a,b) => (a._1, a._2 +b._2))
+
+  }
 
   /**
     * Count the total amount of changes for each file status (e.g. modified, removed or added) for the following extensions: .js and .py.
@@ -78,7 +84,9 @@ object FlinkAssignment {
     * Make use of a non-keyed window.
     * Output format: (date, count)
     */
-  def question_five(input: DataStream[Commit]): DataStream[(String, Int)] = ???
+  def question_five(input: DataStream[Commit]): DataStream[(String, Int)] = {
+    input.assignAscendingTimestamps(i => i.commit.committer.date.getTime).map(new FiveOne).timeWindowAll(Time.days(1)).reduce((a, b) => (a._1, a._2+b._2))
+  }
 
   /**
     * Consider two types of commits; small commits and large commits whereas small: 0 <= x <= 20 and large: x > 20 where x = total amount of changes.
@@ -103,7 +111,10 @@ object FlinkAssignment {
     * Output format: CommitSummary
     */
   def question_seven(
-      commitStream: DataStream[Commit]): DataStream[CommitSummary] = ???
+      commitStream: DataStream[Commit]): DataStream[CommitSummary] = {
+    commitStream.assignAscendingTimestamps(i => i.commit.committer.date.getTime).keyBy(i  => i.url.split('/')(4)+i.url.split('/')(5)).timeWindow(Time.days(1)).aggregate(new SevenTwo).filter(i => i.amountOfCommits>20 && i.amountOfCommitters <=2)
+
+  }
 
   /**
     * For this exercise there is another dataset containing CommitGeo events. A CommitGeo event stores the sha of a commit, a date and the continent it was produced in.
@@ -124,6 +135,13 @@ object FlinkAssignment {
     * Output format: (repository, filename)
     */
   def question_nine(
-      inputStream: DataStream[Commit]): DataStream[(String, String)] = ???
+      inputStream: DataStream[Commit]): DataStream[(String, String)] = {
+    val pattern = Pattern.begin("start").where((i :(String, File)) =>  i._2.status.getOrElse("").equals("added")).next("removed").where((i :(String, File)) =>  i._2.status.getOrElse("").equals("removed")).within(Time.days(1))
+
+    val changed = inputStream.assignAscendingTimestamps((i : Commit) => i.commit.committer.date.getTime).flatMap[(String, File)]((t : Commit) => t.files.map(i => (t.url.split('/')(4)+"/"+t.url.split('/')(5), i))).filter(k => !k._2.status.getOrElse("modified").equals("modified")).keyBy((i : (String, File)) => i._1+i._2.filename.getOrElse(""))
+
+
+    CEP.pattern(changed, pattern).process(new NineOne)
+  }
 
 }
