@@ -7,7 +7,8 @@ import org.apache.flink.cep.scala.pattern.Pattern
 import org.apache.flink.streaming.api.windowing.time.Time
 import util.Protocol.{Commit, CommitGeo, CommitSummary, File, Stats}
 import util.{CommitGeoParser, CommitParser}
-
+import org.apache.flink.streaming.api.functions.co.ProcessJoinFunction
+import org.apache.flink.util.Collector
 
 
 /** Do NOT rename this class, otherwise autograding will fail. **/
@@ -147,9 +148,32 @@ object FlinkAssignment {
     * Hint: Find the correct join to use!
     * Output format: (continent, amount)
     */
-  def question_eight(
-      commitStream: DataStream[Commit],
-      geoStream: DataStream[CommitGeo]): DataStream[(String, Int)] = ???
+  def question_eight(commitStream: DataStream[Commit], geoStream: DataStream[CommitGeo]): DataStream[(String, Int)] = {
+    val commits = commitStream
+      .assignAscendingTimestamps(_.commit.committer.date.getTime)
+      .keyBy(_.sha)
+
+    val geos = geoStream
+      .assignAscendingTimestamps(_.createdAt.getTime)
+      .keyBy(_.sha)
+
+    commits
+      .intervalJoin(geos) // join by sha
+      .between(Time.hours(-1), Time.minutes(30)) // geo in [commit - 1h, commit + 30min]
+      .process(new ProcessJoinFunction[Commit, CommitGeo, (String, Int)] {
+        override def processElement(
+          c: Commit, g: CommitGeo,
+          ctx: ProcessJoinFunction[Commit, CommitGeo, (String, Int)]#Context,
+          out: Collector[(String, Int)]): Unit = {
+            val javaFiles = c.files.filter(_.filename.exists(_.endsWith(".java")))
+            if (javaFiles.nonEmpty)
+              out.collect((g.continent, javaFiles.map(_.changes).sum))
+          }
+      })
+      .keyBy(_._1) // per continent
+      .timeWindow(Time.days(7)) // weekly
+      .reduce((a, b) => (a._1, a._2 + b._2)) // sum java changes
+  }
 
   /**
     * Find all files that were added and removed within one day. Output as (repository, filename).
