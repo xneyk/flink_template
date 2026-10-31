@@ -38,8 +38,7 @@ object FlinkAssignment {
         .map(new CommitGeoParser)
 
     /** Use the space below to print and test your questions. */
-    // question_nine(commitStream).print()
-    // question_two(commitStream).print()
+    question_six(commitStream).print()
 
     /** Start the streaming environment. **/
     env.execute()
@@ -107,7 +106,17 @@ object FlinkAssignment {
     * Compute every 12 hours the amount of small and large commits in the last 48 hours.
     * Output format: (type, count)
     */
-  def question_six(input: DataStream[Commit]): DataStream[(String, Int)] = ???
+  def question_six(input: DataStream[Commit]): DataStream[(String, Int)] = {
+    input
+      .assignAscendingTimestamps(_.commit.committer.date.getTime)
+      .map { c => 
+        val total = c.stats.map(_.total).getOrElse(0)   // x = total amount of changes
+        if (total > 20) ("large", 1) else ("small", 1)
+      }
+      .keyBy(_._1) // make one group for small and one group for large
+      .timeWindow(Time.hours(48), Time.hours(12)) // 48h window, sliding every 12h
+      .reduce((a, b) => (a._1, a._2+b._2)) // count commits per window
+  }
 
   /**
     * For each repository compute a daily commit summary and output the summaries with more than 20 commits and at most 2 unique committers. The CommitSummary case class is already defined.
