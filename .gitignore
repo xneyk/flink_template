@@ -2,6 +2,7 @@
 data/
 #ignore build artifacts
 target/
+*.out
 # ignore metals and vscode stuff
 .metals
 .vscode
