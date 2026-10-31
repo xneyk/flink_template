@@ -2,7 +2,9 @@
 data/
 #ignore build artifacts
 target/
+*.zip
 *.out
 # ignore metals and vscode stuff
 .metals
 .vscode
+.DS_Store

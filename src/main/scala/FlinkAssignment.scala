@@ -39,7 +39,7 @@ object FlinkAssignment {
 
     /** Use the space below to print and test your questions. */
     // question_nine(commitStream).print()
-    question_two(commitStream).print()
+    // question_two(commitStream).print()
 
     /** Start the streaming environment. **/
     env.execute()
@@ -66,7 +66,7 @@ object FlinkAssignment {
     input
       .flatMap(_.files) // from commits to files
       .filter(_.deletions > 30) // keep files with more than 30 deletions
-      .flatMap(_.filename)  // extract filenames and discart "none"
+      .flatMap(_.filename)  // extract filenames and discard "none"
   }
 
   /**
@@ -82,8 +82,16 @@ object FlinkAssignment {
     * Count the total amount of changes for each file status (e.g. modified, removed or added) for the following extensions: .js and .py.
     * Output format: (extension, status, count)
     */
-  def question_four(
-      input: DataStream[Commit]): DataStream[(String, String, Int)] = ???
+  def question_four(input: DataStream[Commit]): DataStream[(String, String, Int)] = {
+    input
+      .flatMap(_.files) // from commits to files
+      .filter(f => f.filename.isDefined && f.status.isDefined) // discard "none"
+      .map(f => (f.filename.get.split('.').last, f.status.get, f.changes)) // (ext, status, changes)
+      .filter(t => t._1 == "js" || t._1 == "py") // only keep js and py extensions
+      .keyBy(t => (t._1, t._2)) // key = (ext, status)
+      .reduce((a, b) => (a._1, a._2, a._3 + b._3)) // running sum of changes per key
+
+  }
 
   /**
     * For every day output the amount of commits. Include the timestamp in the following format dd-MM-yyyy; e.g. (26-06-2019, 4) meaning on the 26th of June 2019 there were 4 commits.
